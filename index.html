@@ -355,7 +355,7 @@
           const fieldDiv = document.createElement("div");
           fieldDiv.className = "mb-4";
 
-          // Create the label with tooltip (Font Awesome info icon)
+          // Create the label with tooltip
           const labelEl = document.createElement("label");
           labelEl.setAttribute("for", name);
           labelEl.className = "block text-sm font-medium text-gray-700 flex items-center";
@@ -389,10 +389,10 @@
             inputEl = document.createElement("select");
             inputEl.innerHTML = `<option value="">Select time zone...</option>`;
           }
-          // For integer-only fields, use type="text" so we can apply our own strict regex
+          // For integer-only fields, use type="text"
           else if (config_items_integer.includes(name)) {
             inputEl = document.createElement("input");
-            inputEl.type = "text"; // custom validation will reject non-integers
+            inputEl.type = "text"; // We'll do a custom integer validation
           }
           // Otherwise, plain text
           else {
@@ -470,7 +470,7 @@
 
       // If integer-only, check regex
       if (valid && config_items_integer.includes(name) && value !== "") {
-        // Strict integer check: optional leading '-' + digits
+        // Strict integer check (optional leading '-' + digits)
         if (!/^-?\d+$/.test(value)) {
           valid = false;
           errorMessage = "Must be an integer.";
@@ -515,10 +515,8 @@
 
     function validateForm() {
       let isValid = true;
-      // Validate all fields
       document.querySelectorAll("input, select").forEach((field) => {
-        const fieldIsValid = validateField(field);
-        if (!fieldIsValid) {
+        if (!validateField(field)) {
           isValid = false;
         }
       });
@@ -627,11 +625,10 @@
     // --- Setup Event Listeners for Real-Time Validation ---
     function setupValidationListeners() {
       const saveBtn = document.getElementById("saveButton");
-      // For every input or select, revalidate on input, change, blur
       document.querySelectorAll("input, select").forEach((field) => {
         const revalidate = () => {
-          validateField(field); // show inline error if needed
-          saveBtn.disabled = !validateForm(); // disable if any field is invalid
+          validateField(field);
+          saveBtn.disabled = !validateForm();
         };
         field.addEventListener("input", revalidate);
         field.addEventListener("change", revalidate);
@@ -639,100 +636,100 @@
       });
     }
 
-    // --- Load Configuration from /config.json ---
+    // --- Load Configuration from /config.json as TEXT & parse ---
     function loadConfiguration() {
-      fetch("http://127.0.0.1:5000/config.json")
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Failed to load configuration.");
+      fetch("/config.json")
+        .then((response) => response.ok ? response.text() : Promise.reject("Failed to load config"))
+        .then((rawText) => {
+          // rawText is the entire /config.json from the server as text
+          // Attempt to parse it as JSON
+          let parsed;
+          try {
+            parsed = JSON.parse(rawText); // Expecting an array of objects, e.g. [{name, value}, ...]
+          } catch (err) {
+            console.error("Parsing config JSON failed:", err);
+            throw new Error("JSON parse error");
           }
-          return response.json();
-        })
-        .then((data) => {
-          // data is an array of objects with { name, value }
-          data.forEach((item) => {
+
+          // Fill the form fields
+          parsed.forEach((item) => {
             const field = document.getElementsByName(item.name)[0];
-            if (field && typeof item.value !== "undefined") {
-              field.value = item.value;
+            if (field) {
+              field.value = (typeof item.value !== "undefined") ? item.value : "";
             }
           });
 
-          // Hide spinner and show the form
+          // Hide spinner, show form
           document.getElementById("loadingSpinner").classList.add("hidden");
           document.getElementById("configForm").classList.remove("hidden");
 
-          // Immediately validate everything after loading
+          // Validate after loading
           document.getElementById("saveButton").disabled = !validateForm();
         })
         .catch((err) => {
           console.error("Error loading configuration:", err);
-          document.getElementById("loadingSpinner").innerHTML =
-            "<p class='text-red-500'>Failed to load configuration.</p>";
+          const spinner = document.getElementById("loadingSpinner");
+          spinner.innerHTML = "<p class='text-red-500'>Failed to load configuration.</p>";
         });
     }
 
-    // --- Save Configuration ---
+    // --- Save Configuration via PUT as raw text ---
     function saveConfiguration() {
-      // Final check right before saving
+      // Final check
       if (!validateForm()) {
-        showToast(
-          "Some fields are invalid. Please correct and try again.",
-          "validation_error"
-        );
+        showToast("Some fields are invalid. Please correct and try again.", "validation_error");
         return;
       }
 
+      // Build array from form
       const configItems = [];
       document.querySelectorAll("input, select").forEach((field) => {
         configItems.push({
           name: field.name,
-          value: field.value.trim(),
+          value: field.value.trim()
         });
       });
 
-      showToast("Saving configuration...", "info");
-      document.getElementById("saveSpinner").classList.remove("hidden");
-      document.getElementById("saveButton").disabled = true;
+      const rawJson = JSON.stringify(configItems, null, 2); // raw text
 
-      // Example: POST the JSON to the server
-      fetch("http://127.0.0.1:5000/config.json", {
-        method: "POST",
+      showToast("Saving configuration...", "info");
+      const saveSpinner = document.getElementById("saveSpinner");
+      saveSpinner.classList.remove("hidden");
+      const saveBtn = document.getElementById("saveButton");
+      saveBtn.disabled = true;
+
+      fetch("/config.json", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(configItems),
+        body: rawJson
       })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Failed to save configuration.");
-          }
-          return response.json(); // assume the server returns some JSON
-        })
-        .then((result) => {
-          document.getElementById("saveSpinner").classList.add("hidden");
-          document.getElementById("saveButton").disabled = false;
-          showToast("Configuration saved successfully!", "success");
-          // Potentially do a second step, like a device restart
-          setTimeout(() => {
-            showToast("Coffee Time! Your Piggy will restart to apply changes...", "info");
-          }, 800);
-        })
-        .catch((err) => {
-          console.error("Error saving configuration:", err);
-          document.getElementById("saveSpinner").classList.add("hidden");
-          document.getElementById("saveButton").disabled = false;
-          // Show an upload error toast (black)
-          showToast("Failed to save configuration.", "upload_error");
-        });
+      .then((response) => response.text())
+      .then((data) => {
+        // The server might return "Configuration file saved." or something similar
+        saveSpinner.classList.add("hidden");
+        saveBtn.disabled = false;
+        showToast("Configuration saved successfully!", "success");
+        setTimeout(() => {
+          showToast("Coffee Time! The Piggy may restart to apply changes...", "info");
+        }, 800);
+      })
+      .catch((err) => {
+        console.error("Error saving configuration:", err);
+        saveSpinner.classList.add("hidden");
+        saveBtn.disabled = false;
+        showToast("Failed to save configuration.", "upload_error");
+      });
     }
 
     // --- Initialization ---
     document.addEventListener("DOMContentLoaded", function () {
-      buildForm(); // Build the form from the metadata
-      setupCollapsible(); // Set up collapsible/expandable sections
-      populateTimeZones(); // Populate the time zone dropdown
-      setupValidationListeners(); // Attach real-time validation to fields
-      loadConfiguration(); // Load existing config from backend
+      buildForm();               // Build the dynamic form
+      setupCollapsible();        // Collapsible sections
+      populateTimeZones();       // Timezone dropdown
+      setupValidationListeners(); // Real-time validation
+      loadConfiguration();       // Load config from /config.json via GET -> text -> parse JSON
 
-      // Attach event listener to the Save button
+      // Hook up the Save button
       document.getElementById("saveButton").addEventListener("click", function (e) {
         e.preventDefault();
         saveConfiguration();
