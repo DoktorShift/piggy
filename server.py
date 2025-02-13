@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # Configure logging
@@ -67,7 +67,17 @@ def save_config():
         logging.error(f"Error saving config.json: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# ----------------------------------------
+# Serve index.html from the same directory
+# ----------------------------------------
+@app.route("/")
+def serve_index():
+    """
+    Serve your index.html so you don't need a separate local webserver on port 8080.
+    Make sure 'index.html' is in the same folder as this 'server.py'.
+    """
+    return send_from_directory(".", "index.html")
+
 if __name__ == "__main__":
     logging.info("Starting Flask server on http://127.0.0.1:5000")
     app.run(host="127.0.0.1", port=5000, debug=True)
-
