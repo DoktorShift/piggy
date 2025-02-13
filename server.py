@@ -16,7 +16,7 @@ CORS(app)  # Allow cross-origin requests from your frontend
 
 CONFIG_FILE = "config.json"
 
-# Ensure config file exists or create default with the proper structure
+# Ensure config file exists or create a default one with a known structure
 if not os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, "w") as f:
         default_config = [
@@ -44,7 +44,9 @@ if not os.path.exists(CONFIG_FILE):
 
 @app.route("/config.json", methods=["GET"])
 def get_config():
-    """Serve config.json contents."""
+    """
+    Serve config.json contents as JSON array of objects: [ {name, value}, ... ].
+    """
     try:
         with open(CONFIG_FILE, "r") as f:
             config_data = json.load(f)
@@ -54,27 +56,29 @@ def get_config():
         logging.error(f"Error reading config.json: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/config.json", methods=["POST"])
-def save_config():
-    """Save posted JSON to config.json."""
+@app.route("/config.json", methods=["PUT"])
+def put_config():
+    """
+    Save the JSON body to config.json (replaces previous contents).
+    Expects an array of objects [ { "name": "...", "value": "..." }, ... ].
+    """
     try:
-        new_config = request.get_json()  # Expect a JSON body
+        new_config = request.get_json()  # Expect JSON body
+        if not isinstance(new_config, list):
+            return jsonify({"error": "Expected a JSON list of {name,value} objects"}), 400
+
         with open(CONFIG_FILE, "w") as f:
             json.dump(new_config, f, indent=4)
-        logging.info(f"Updated config.json: {new_config}")
+        logging.info(f"Updated config.json via PUT: {new_config}")
         return jsonify({"status": "success", "message": "Configuration saved!"}), 200
     except Exception as e:
         logging.error(f"Error saving config.json: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# ----------------------------------------
-# Serve index.html from the same directory
-# ----------------------------------------
 @app.route("/")
 def serve_index():
     """
-    Serve your index.html so you don't need a separate local webserver on port 8080.
-    Make sure 'index.html' is in the same folder as this 'server.py'.
+    Serve 'index.html' from the same directory (no separate local server needed).
     """
     return send_from_directory(".", "index.html")
 
